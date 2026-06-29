@@ -167,7 +167,7 @@
     <div class="main-panel">
         <div class="visuals-container">
             <div class="glitch-wrapper">
-                <div style="margin-bottom: 5px; font-weight: bold;">👾 Live Shared Glitch Canvas</div>
+                <div style="margin-bottom: 5px; font-weight: bold;">👾 Live Shared Video Mix</div>
                 <canvas id="glitchCanvas"></canvas>
             </div>
         </div>
@@ -215,9 +215,8 @@
         let recordedChunks = [];
         let isRecording = false;
         
-        // This memory layer holds the incoming matrix stream from remote peers
-        let remoteImageObj = new Image();
-        let lastVideoSender = "";
+        // Dictionary tracking remote camera feeds concurrently
+        let remotePeers = {};
 
         const webcam = document.getElementById('webcam');
         const canvas = document.getElementById('glitchCanvas');
@@ -242,9 +241,14 @@
             if (topic === VIDEO_TOPIC) {
                 try {
                     const videoPacket = JSON.parse(dataPacket.toString());
-                    if (videoPacket.sender !== usernameInput.value) {
-                        remoteImageObj.src = videoPacket.frame;
-                        lastVideoSender = videoPacket.sender;
+                    const peerId = videoPacket.sender;
+                    
+                    if (peerId !== usernameInput.value) {
+                        if (!remotePeers[peerId]) {
+                            remotePeers[peerId] = { img: new Image(), lastSeen: Date.now() };
+                        }
+                        remotePeers[peerId].img.src = videoPacket.frame;
+                        remotePeers[peerId].lastSeen = Date.now();
                     }
                 } catch(e){}
                 return;
@@ -265,7 +269,6 @@
             client.publish(ROOM_TOPIC, JSON.stringify(outPacket));
         }
 
-        // Optimized low-overhead frame matrix emitter
         function broadcastLocalFrame(base64Frame) {
             if(client && client.connected) {
                 const framePacket = { sender: usernameInput.value, frame: base64Frame };
@@ -328,40 +331,62 @@
             document.getElementById('startAudioBtn').innerText = "🔊 Audio Engine Active";
         }
 
-        // --- Frame Synchronizer and Network Matrix Loop ---
+        // --- Multiplexed Video Composition Matrix ---
         let lastBroadcastTime = 0;
-        const hiddenCanvas = document.createElement('canvas'); // Dedicated background downsampler
+        const hiddenCanvas = document.createElement('canvas'); 
         const hiddenCtx = hiddenCanvas.getContext('2d');
 
         function drawGlitchFrame() {
             requestAnimationFrame(drawGlitchFrame);
             
-            if (canvas.width !== 480) { canvas.width = 480; canvas.height = 360; }
+            if (canvas.width !== 640) { canvas.width = 640; canvas.height = 480; }
 
-            // Priority 1: Render your local active webcam frame
+            // Step 1: Wipe workspace with dynamic synthesis mathematical values
+            ctx.fillStyle = `rgb(${(currentByteValue ^ 42) & 255}, 0, ${(currentByteValue * 2) & 255})`;
+            ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+            // Collect all active image feeds (local camera + remote inputs)
+            let activeFeeds = [];
+
             if (videoStream && webcam.videoWidth > 0) {
-                ctx.drawImage(webcam, 0, 0, canvas.width, canvas.height);
+                activeFeeds.push({ source: webcam, type: 'video' });
                 
-                // Compress and send data over network at regular intervals
+                // Keep network broadcasting pipeline synchronized
                 let now = Date.now();
-                if (now - lastBroadcastTime > 150) { // capped data link rates protect mobile device pipelines
-                    hiddenCanvas.width = 160; hiddenCanvas.height = 120; // compression target downscaling
+                if (now - lastBroadcastTime > 150) { 
+                    hiddenCanvas.width = 160; hiddenCanvas.height = 120; 
                     hiddenCtx.drawImage(webcam, 0, 0, 160, 120);
-                    broadcastLocalFrame(hiddenCanvas.toDataURL('image/jpeg', 0.4)); // high-speed processing format
+                    broadcastLocalFrame(hiddenCanvas.toDataURL('image/jpeg', 0.35)); 
                     lastBroadcastTime = now;
                 }
-            } 
-            // Priority 2: If you aren't broadcasting, read the streams of other active jammers
-            else if (remoteImageObj.src) {
-                ctx.drawImage(remoteImageObj, 0, 0, canvas.width, canvas.height);
-            } 
-            // Priority 3: Fallback synth vector pattern generator
-            else {
-                ctx.fillStyle = `rgb(${(currentByteValue ^ 42) & 255}, 0, ${(currentByteValue * 2) & 255})`;
-                ctx.fillRect(0, 0, canvas.width, canvas.height);
             }
 
-            // Realtime Glitch Shader Pass Engine
+            // Prune dead connection sessions and mount live elements
+            for (let peerId in remotePeers) {
+                if (Date.now() - remotePeers[peerId].lastSeen < 3000) { // 3-second timeout limit
+                    if (remotePeers[peerId].img.complete && remotePeers[peerId].img.naturalWidth > 0) {
+                        activeFeeds.push({ source: remotePeers[peerId].img, type: 'image' });
+                    }
+                }
+            }
+
+            // Step 2: Layer and multiplex all feeds based on current music value
+            if (activeFeeds.length > 0) {
+                activeFeeds.forEach((feed, index) => {
+                    ctx.save();
+                    
+                    // Modulate opacity dynamically matching rhythmic sequence fluctuations
+                    ctx.globalAlpha = 1.0 / activeFeeds.length + (Math.sin(currentByteValue + index) * 0.2);
+                    
+                    // Mix modes flip natively responding directly to audio spectrum states
+                    ctx.globalCompositeOperation = (currentByteValue % 2 === 0) ? 'screen' : 'difference';
+
+                    ctx.drawImage(feed.source, 0, 0, canvas.width, canvas.height);
+                    ctx.restore();
+                });
+            }
+
+            // Step 3: Run the combined stream through the unified audio-driven glitch shader pass
             try {
                 let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                 let data = imgData.data;
@@ -371,6 +396,7 @@
 
                 if (strength > 3) {
                     for (let i = 0; i < data.length; i += 4) {
+                        // Scanline fracturing loops
                         if (Math.floor(i / (canvas.width * 4)) % (12 + (currentByteValue % 15)) < 5) {
                             let targetIdx = (i + offset) % data.length;
                             data[i] = data[targetIdx]; 
@@ -392,14 +418,13 @@
         document.getElementById('webcamBtn').addEventListener('click', async () => {
             if (!videoStream) {
                 try {
-                    // Mobile fix: Explicit parameter overrides circumvent standard iOS/Android constraint errors
                     videoStream = await navigator.mediaDevices.getUserMedia({ 
-                        video: { facingMode: "user", width: { ideal: 640 }, height: { ideal: 480 } }, 
+                        video: { facingMode: "user", width: { ideal: 480 }, height: { ideal: 360 } }, 
                         audio: false 
                     });
                     webcam.srcObject = videoStream;
                 } catch (err) {
-                    alert("Camera access denied. Ensure permission parameters allow browser visibility.");
+                    alert("Camera access denied or unavailable.");
                 }
             } else {
                 videoStream.getTracks().forEach(track => track.stop());
@@ -448,7 +473,7 @@
                     const url = URL.createObjectURL(blob);
                     const a = document.createElement('a');
                     a.href = url;
-                    a.download = `bytebeat_jam_${Date.now()}.webm`;
+                    a.download = `bytebeat_mix_${Date.now()}.webm`;
                     a.click();
                 };
 
