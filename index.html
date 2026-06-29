@@ -3,41 +3,425 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>KONCERT</title>
+    <title>Collaborative Bytebeat Glitch Jam</title>
     <style>
-        body, html {
+        :root {
+            --bg-color: #0a0a0c;
+            --panel-color: #141419;
+            --accent-color: #00ff66;
+            --text-color: #e0e0e6;
+        }
+        body {
             margin: 0;
-            padding: 0;
+            padding: 20px;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            font-family: 'Courier New', Courier, monospace;
+            display: grid;
+            grid-template-columns: 1fr 380px;
+            gap: 20px;
+            height: calc(100vh - 40px);
+        }
+        .main-panel {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            height: 100%;
+        }
+        .visuals-container {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            flex: 1;
+            background: var(--panel-color);
+            padding: 15px;
+            border: 2px solid #333;
+            min-height: 0; /* Allows proper flex scaling */
+        }
+        .glitch-wrapper {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+        canvas {
+            width: 100%;
+            flex: 1;
+            background: #000;
+            border: 2px solid var(--accent-color);
+            object-fit: contain;
+        }
+        .raw-webcam-box {
+            position: fixed;
+            bottom: 35px;
+            left: 35px;
+            width: 160px;
+            height: 120px;
+            border: 2px solid #444;
+            background: #000;
+            z-index: 10;
+            box-shadow: 0 0 10px rgba(0,0,0,0.8);
+        }
+        video {
             width: 100%;
             height: 100%;
-            display: block;
-            justify-content: center;
+            object-fit: cover;
+        }
+        .controls {
+            background: var(--panel-color);
+            padding: 15px;
+            border: 2px solid #333;
+            display: flex;
+            gap: 10px;
             align-items: center;
-            background-color: #000000; /* Sleek black background */
-            font-family: 'Arial Black', Impact, sans-serif;
-            overflow: hidden;
+            flex-wrap: wrap;
         }
-
-        h1 {
-            color: #ffffff; /* Crisp white text */
-            font-size: 12vw; /* Scales automatically with screen width */
-            letter-spacing: 0.5rem;
-            margin: 0;
-            text-transform: uppercase;
-            text-align: center;
-            user-select: none;
+        .chat-panel {
+            background: var(--panel-color);
+            border: 2px solid #333;
+            display: flex;
+            flex-direction: column;
+            height: 100%;
         }
-        
-        p {text-align: center;}
+        .chat-history {
+            flex: 1;
+            overflow-y: auto;
+            padding: 15px;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        .message-card {
+            background: #1c1c24;
+            padding: 10px;
+            border-left: 4px solid var(--accent-color);
+        }
+        .message-header {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 5px;
+            display: flex;
+            justify-content: space-between;
+        }
+        .formula-display {
+            background: #000;
+            padding: 8px;
+            color: var(--accent-color);
+            font-size: 14px;
+            overflow-x: auto;
+            white-space: pre-wrap;
+        }
+        .chat-input-area {
+            padding: 15px;
+            border-top: 2px solid #333;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        textarea {
+            background: #000;
+            color: #fff;
+            border: 1px solid #444;
+            padding: 10px;
+            font-family: inherit;
+            resize: none;
+        }
+        button {
+            background: #222;
+            color: var(--accent-color);
+            border: 1px solid var(--accent-color);
+            padding: 8px 15px;
+            cursor: pointer;
+            font-family: inherit;
+            font-weight: bold;
+            transition: all 0.2s;
+        }
+        button:hover {
+            background: var(--accent-color);
+            color: #000;
+        }
+        button.recording {
+            background: #ff3333;
+            color: #fff;
+            border-color: #ff3333;
+            animation: pulse 1.5s infinite;
+        }
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+        .user-tag {
+            color: #00e1ff;
+            font-weight: bold;
+        }
     </style>
 </head>
 <body>
 
-    <h1>NEPOSLUŠNI KONCERT</h1>
-    <p>
-    <br>
-	<audio controls="true" preload="none"><source src="https://s19.myradiostream.com:8318//;stream.mp3;" type="audio/mp3">Your browser does not support the audio element.</audio> 
-	</p>
+    <div class="raw-webcam-box">
+        <video id="webcam" autoplay muted playsinline></video>
+    </div>
 
+    <div class="main-panel">
+        <div class="visuals-container">
+            <div class="glitch-wrapper">
+                <div style="margin-bottom: 5px; font-weight: bold;">👾 Live Glitch Output Canvas</div>
+                <canvas id="glitchCanvas"></canvas>
+            </div>
+        </div>
+
+        <div class="controls">
+            <button id="startAudioBtn">🔊 Start Audio Engine</button>
+            <button id="webcamBtn">📹 Toggle Webcam</button>
+            <button id="recordBtn">🔴 Record Audio & Video</button>
+            <span id="status" style="color: #888; margin-left: auto;">Current Formula: None Loaded</span>
+        </div>
+    </div>
+
+    <div class="chat-panel">
+        <div style="padding: 15px; border-bottom: 2px solid #333; font-weight: bold;">💬 Bytebeat Chat & Jam Feed</div>
+        <div class="chat-history" id="chatHistory">
+            </div>
+        <div class="chat-input-area">
+            <div style="display: flex; gap: 10px;">
+                <input type="text" id="usernameInput" placeholder="Your Username" value="Jammer" style="background:#000; color:#fff; border:1px solid #444; padding:5px; width:120px;">
+                <span style="align-self: center; color: #666;">Formula (use 't'):</span>
+            </div>
+            <textarea id="formulaInput" rows="3" placeholder="((t >> 12) | (t >> 8)) & (t >> 4)"></textarea>
+            <div style="display: flex; gap: 10px;">
+                <button id="sendBtn" style="flex: 1;">🚀 Inject to Feed & Play</button>
+                <button id="remixBtn" style="background: #331144; color: #ff00ff; border-color: #ff00ff;">⚡ Quick Remix</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- App State & Audio Settings ---
+        let username = "Jammer" + Math.floor(Math.random() * 1000);
+        document.getElementById('usernameInput').value = username;
+
+        let audioCtx = null;
+        let scriptNode = null;
+        let t = 0; 
+        let currentFormulaStr = "((t >> 12) | (t >> 8)) & (t >> 4)";
+        let currentFormulaFn = (t) => ((t >> 12) | (t >> 8)) & (t >> 4);
+        let currentByteValue = 0;
+
+        // Video & Recording variables
+        let videoStream = null;
+        let mediaRecorder = null;
+        let recordedChunks = [];
+        let isRecording = false;
+
+        // Elements
+        const webcam = document.getElementById('webcam');
+        const canvas = document.getElementById('glitchCanvas');
+        const ctx = canvas.getContext('2d');
+        const chatHistory = document.getElementById('chatHistory');
+        const formulaInput = document.getElementById('formulaInput');
+        const usernameInput = document.getElementById('usernameInput');
+
+        formulaInput.value = currentFormulaStr;
+
+        // --- Mock WebSocket / Network Sync ---
+        function broadcastData(type, payload) {
+            handleIncomingPacket({ type, payload, sender: usernameInput.value, timestamp: new Date().toLocaleTimeString() });
+        }
+
+        function handleIncomingPacket(packet) {
+            if (packet.type === 'formula') {
+                try {
+                    const cleanFormula = packet.payload.replace(/[^0-9tT&|<>^%*+\-~/()?\s:]/g, ''); 
+                    currentFormulaFn = new Function('t', `return (${cleanFormula}) & 255;`);
+                    currentFormulaStr = packet.payload;
+                    document.getElementById('status').innerText = `Playing: ${packet.sender}'s remix`;
+                } catch(e) {
+                    console.error("Invalid formula received:", e);
+                }
+            }
+
+            // Append to Collaborative Log UI
+            const msgCard = document.createElement('div');
+            msgCard.className = 'message-card';
+            if (packet.sender === usernameInput.value) msgCard.style.borderLeftColor = '#ff00ff';
+            
+            msgCard.innerHTML = `
+                <div class="message-header">
+                    <span><span class="user-tag">${packet.sender}</span> updated the stream</span>
+                    <span>${packet.timestamp}</span>
+                </div>
+                <div class="formula-display">${packet.payload}</div>
+                <button onclick="applyRemix('${btoa(packet.payload)}')" style="font-size:10px; padding:2px 5px; margin-top:5px;">Fork/Edit This</button>
+            `;
+            chatHistory.appendChild(msgCard);
+            
+            // Auto scroll to bottom
+            setTimeout(() => {
+                chatHistory.scrollTop = chatHistory.scrollHeight;
+            }, 10);
+        }
+
+        window.applyRemix = function(base64Formula) {
+            formulaInput.value = atob(base64Formula);
+            formulaInput.focus();
+        };
+
+        // --- Bytebeat Audio Engine ---
+        function initAudio() {
+            if (audioCtx) return;
+            audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 8000 }); 
+            
+            scriptNode = audioCtx.createScriptProcessor(4096, 0, 1);
+            
+            scriptNode.onaudioprocess = function(audioProcessingEvent) {
+                const outputBuffer = audioProcessingEvent.outputBuffer;
+                const channelData = outputBuffer.getChannelData(0);
+                
+                for (let sample = 0; sample < outputBuffer.length; sample++) {
+                    try {
+                        currentByteValue = currentFormulaFn(t);
+                        const val = (currentByteValue & 255) / 128.0 - 1.0;
+                        channelData[sample] = val;
+                    } catch(e) {
+                        channelData[sample] = 0; 
+                    }
+                    t++;
+                }
+            };
+
+            scriptNode.connect(audioCtx.destination);
+            document.getElementById('startAudioBtn').innerText = "🔊 Audio Engine Active";
+            document.getElementById('startAudioBtn').style.borderColor = varAccent();
+        }
+
+        function varAccent() { return getComputedStyle(document.documentElement).getPropertyValue('--accent-color').trim(); }
+
+        // --- Real-time Glitch Video Synthesizer ---
+        function drawGlitchFrame() {
+            requestAnimationFrame(drawGlitchFrame);
+            
+            if (videoStream && webcam.videoWidth > 0) {
+                if (canvas.width !== webcam.videoWidth) {
+                    canvas.width = webcam.videoWidth;
+                    canvas.height = webcam.videoHeight;
+                }
+                ctx.drawImage(webcam, 0, 0, canvas.width, canvas.height);
+            } else {
+                if (canvas.width !== 640) { canvas.width = 640; canvas.height = 480; }
+                ctx.fillStyle = `rgb(${(currentByteValue ^ 42) & 255}, 0, ${(currentByteValue * 2) & 255})`;
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+            }
+
+            // Heavy Glitch Manipulation Loop using currentByteValue
+            try {
+                let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                let data = imgData.data;
+                
+                // Use the live byte values to alter slicing metrics
+                let strength = currentByteValue & 63; 
+                let offset = (currentByteValue * 4) % (canvas.width * 4);
+
+                if (strength > 5) {
+                    for (let i = 0; i < data.length; i += 4) {
+                        // Scanline line-shift glitching
+                        if (Math.floor(i / (canvas.width * 4)) % (10 + (currentByteValue % 20)) < 4) {
+                            let targetIdx = (i + offset) % data.length;
+                            data[i] = data[targetIdx];         // Red channel mutation
+                            data[i+1] = data[(targetIdx + 1) % data.length] ^ currentByteValue; // Green XOR mutation
+                            data[i+2] = 255 - data[i+2];       // High-contrast color inversion
+                        }
+                    }
+                }
+                ctx.putImageData(imgData, 0, 0);
+            } catch(e) {}
+        }
+
+        // --- Interaction Handlers ---
+        document.getElementById('startAudioBtn').addEventListener('click', () => {
+            initAudio();
+            if (audioCtx.state === 'suspended') audioCtx.resume();
+        });
+
+        document.getElementById('webcamBtn').addEventListener('click', async () => {
+            if (!videoStream) {
+                try {
+                    videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+                    webcam.srcObject = videoStream;
+                } catch (err) {
+                    alert("Webcam access denied or unavailable.");
+                }
+            } else {
+                videoStream.getTracks().forEach(track => track.stop());
+                videoStream = null;
+                webcam.srcObject = null;
+            }
+        });
+
+        document.getElementById('sendBtn').addEventListener('click', () => {
+            initAudio();
+            const formula = formulaInput.value.trim();
+            if(formula) broadcastData('formula', formula);
+        });
+
+        document.getElementById('remixBtn').addEventListener('click', () => {
+            const quickRemixes = [" + (t>>3)", " ^ (t%11)", " * (t>>5|t>>8)", " | (t>>2)", " & (t<<1)"];
+            const choice = quickRemixes[Math.floor(Math.random() * quickRemixes.length)];
+            formulaInput.value = `(${formulaInput.value})${choice}`;
+            initAudio();
+            broadcastData('formula', formulaInput.value);
+        });
+
+        // --- Audio & Video Session Recording ---
+        document.getElementById('recordBtn').addEventListener('click', () => {
+            if (!audioCtx || !scriptNode) {
+                alert("Please initialize the audio engine before attempting a recording capture.");
+                return;
+            }
+
+            const recordBtn = document.getElementById('recordBtn');
+
+            if (!isRecording) {
+                recordedChunks = [];
+                
+                // 1. Capture the visual track directly from the live glitched Canvas element
+                const canvasStream = canvas.captureStream(30); // 30 FPS target
+                
+                // 2. Capture the audio node destination track
+                const audioDest = audioCtx.createMediaStreamDestination();
+                scriptNode.connect(audioDest);
+                scriptNode.connect(audioCtx.destination); 
+
+                // 3. Combine both canvas video and node audio tracks into a unified composition stream
+                const combinedStream = new MediaStream();
+                combinedStream.addTrack(canvasStream.getVideoTracks()[0]);
+                combinedStream.addTrack(audioDest.stream.getAudioTracks()[0]);
+
+                mediaRecorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm;codecs=vp8,opus' });
+                mediaRecorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunks.push(e.data); };
+                mediaRecorder.onstop = () => {
+                    const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `bytebeat_jam_${Date.now()}.webm`;
+                    a.click();
+                };
+
+                mediaRecorder.start();
+                isRecording = true;
+                recordBtn.innerText = "⏹️ Stop & Save Video";
+                recordBtn.classList.add('recording');
+            } else {
+                mediaRecorder.stop();
+                isRecording = false;
+                recordBtn.innerText = "🔴 Record Audio & Video";
+                recordBtn.classList.remove('recording');
+            }
+        });
+
+        drawGlitchFrame();
+        broadcastData('formula', currentFormulaStr);
+    </script>
 </body>
 </html>
