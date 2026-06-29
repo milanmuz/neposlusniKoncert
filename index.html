@@ -198,7 +198,7 @@
 
     <script>
         // --- Shared Global Room Setup ---
-        // Change this unique room ID string if you want to create private separate jam sessions
+        // A unique identifier ensures your group connects to the same room
         const ROOM_TOPIC = "global/bytebeat/jam/room_main_12345"; 
 
         let username = "Jammer_" + Math.floor(1000 + Math.random() * 9000);
@@ -225,15 +225,22 @@
 
         formulaInput.value = currentFormulaStr;
 
-        // --- Real Live MQTT Server WebSockets Sync Loop ---
-        document.getElementById('status').innerText = "Connecting to shared room node...";
-        const client = mqtt.connect('wss://broker.hivemq.com:8000/mqtt');
+        // --- REAL LIVE ENCRYPTED WEBSOCKET LOOP ---
+        document.getElementById('status').innerText = "Connecting securely to shared room node...";
+        
+        // FIX: Using Secure WebSocket Port (8884) to pass browser HTTPS validation
+        const client = mqtt.connect('wss://broker.hivemq.com:8884/mqtt');
 
         client.on('connect', () => {
             document.getElementById('status').innerText = "Connected! Send a formula to begin.";
             client.subscribe(ROOM_TOPIC);
             // Send initial formula sequence upon connection setup
             broadcastData('formula', currentFormulaStr);
+        });
+
+        client.on('error', (err) => {
+            console.error("Connection error: ", err);
+            document.getElementById('status').innerText = "Connection failed. Retrying...";
         });
 
         client.on('message', (topic, dataPacket) => {
