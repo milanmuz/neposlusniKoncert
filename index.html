@@ -3,7 +3,8 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Collaborative Bytebeat Glitch Jam</title>
+    <title>Collaborative Bytebeat Glitch Jam (LIVE PANEL)</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/4.3.7/mqtt.min.js"></script>
     <style>
         :root {
             --bg-color: #0a0a0c;
@@ -36,7 +37,7 @@
             background: var(--panel-color);
             padding: 15px;
             border: 2px solid #333;
-            min-height: 0; /* Allows proper flex scaling */
+            min-height: 0;
         }
         .glitch-wrapper {
             flex: 1;
@@ -175,14 +176,13 @@
             <button id="startAudioBtn">🔊 Start Audio Engine</button>
             <button id="webcamBtn">📹 Toggle Webcam</button>
             <button id="recordBtn">🔴 Record Audio & Video</button>
-            <span id="status" style="color: #888; margin-left: auto;">Current Formula: None Loaded</span>
+            <span id="status" style="color: #666; margin-left: auto;">Connecting to network room...</span>
         </div>
     </div>
 
     <div class="chat-panel">
-        <div style="padding: 15px; border-bottom: 2px solid #333; font-weight: bold;">💬 Bytebeat Chat & Jam Feed</div>
-        <div class="chat-history" id="chatHistory">
-            </div>
+        <div style="padding: 15px; border-bottom: 2px solid #333; font-weight: bold;">💬 Bytebeat Chat & Jam Feed (Live)</div>
+        <div class="chat-history" id="chatHistory"></div>
         <div class="chat-input-area">
             <div style="display: flex; gap: 10px;">
                 <input type="text" id="usernameInput" placeholder="Your Username" value="Jammer" style="background:#000; color:#fff; border:1px solid #444; padding:5px; width:120px;">
@@ -197,8 +197,11 @@
     </div>
 
     <script>
-        // --- App State & Audio Settings ---
-        let username = "Jammer" + Math.floor(Math.random() * 1000);
+        // --- Shared Global Room Setup ---
+        // Change this unique room ID string if you want to create private separate jam sessions
+        const ROOM_TOPIC = "global/bytebeat/jam/room_main_12345"; 
+
+        let username = "Jammer_" + Math.floor(1000 + Math.random() * 9000);
         document.getElementById('usernameInput').value = username;
 
         let audioCtx = null;
@@ -208,13 +211,11 @@
         let currentFormulaFn = (t) => ((t >> 12) | (t >> 8)) & (t >> 4);
         let currentByteValue = 0;
 
-        // Video & Recording variables
         let videoStream = null;
         let mediaRecorder = null;
         let recordedChunks = [];
         let isRecording = false;
 
-        // Elements
         const webcam = document.getElementById('webcam');
         const canvas = document.getElementById('glitchCanvas');
         const ctx = canvas.getContext('2d');
@@ -224,9 +225,34 @@
 
         formulaInput.value = currentFormulaStr;
 
-        // --- Mock WebSocket / Network Sync ---
+        // --- Real Live MQTT Server WebSockets Sync Loop ---
+        document.getElementById('status').innerText = "Connecting to shared room node...";
+        const client = mqtt.connect('wss://broker.hivemq.com:8000/mqtt');
+
+        client.on('connect', () => {
+            document.getElementById('status').innerText = "Connected! Send a formula to begin.";
+            client.subscribe(ROOM_TOPIC);
+            // Send initial formula sequence upon connection setup
+            broadcastData('formula', currentFormulaStr);
+        });
+
+        client.on('message', (topic, dataPacket) => {
+            try {
+                const packet = JSON.parse(dataPacket.toString());
+                handleIncomingPacket(packet);
+            } catch (e) {
+                console.error("Malformed data incoming via websocket channels.", e);
+            }
+        });
+
         function broadcastData(type, payload) {
-            handleIncomingPacket({ type, payload, sender: usernameInput.value, timestamp: new Date().toLocaleTimeString() });
+            const outPacket = {
+                type: type,
+                payload: payload,
+                sender: usernameInput.value,
+                timestamp: new Date().toLocaleTimeString()
+            };
+            client.publish(ROOM_TOPIC, JSON.stringify(outPacket));
         }
 
         function handleIncomingPacket(packet) {
@@ -235,13 +261,12 @@
                     const cleanFormula = packet.payload.replace(/[^0-9tT&|<>^%*+\-~/()?\s:]/g, ''); 
                     currentFormulaFn = new Function('t', `return (${cleanFormula}) & 255;`);
                     currentFormulaStr = packet.payload;
-                    document.getElementById('status').innerText = `Playing: ${packet.sender}'s remix`;
+                    document.getElementById('status').innerText = `Playing: ${packet.sender}'s formula`;
                 } catch(e) {
-                    console.error("Invalid formula received:", e);
+                    console.error("Invalid math processing context structural formula.", e);
                 }
             }
 
-            // Append to Collaborative Log UI
             const msgCard = document.createElement('div');
             msgCard.className = 'message-card';
             if (packet.sender === usernameInput.value) msgCard.style.borderLeftColor = '#ff00ff';
@@ -256,10 +281,9 @@
             `;
             chatHistory.appendChild(msgCard);
             
-            // Auto scroll to bottom
-            setTimeout(() => {
-                chatHistory.scrollTop = chatHistory.scrollHeight;
-            }, 10);
+            // Absolute Autoscroll Guarantee
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+            setTimeout(() => { chatHistory.scrollTop = chatHistory.scrollHeight; }, 30);
         }
 
         window.applyRemix = function(base64Formula) {
@@ -271,7 +295,6 @@
         function initAudio() {
             if (audioCtx) return;
             audioCtx = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 8000 }); 
-            
             scriptNode = audioCtx.createScriptProcessor(4096, 0, 1);
             
             scriptNode.onaudioprocess = function(audioProcessingEvent) {
@@ -281,23 +304,18 @@
                 for (let sample = 0; sample < outputBuffer.length; sample++) {
                     try {
                         currentByteValue = currentFormulaFn(t);
-                        const val = (currentByteValue & 255) / 128.0 - 1.0;
-                        channelData[sample] = val;
+                        channelData[sample] = (currentByteValue & 255) / 128.0 - 1.0;
                     } catch(e) {
                         channelData[sample] = 0; 
                     }
                     t++;
                 }
             };
-
             scriptNode.connect(audioCtx.destination);
             document.getElementById('startAudioBtn').innerText = "🔊 Audio Engine Active";
-            document.getElementById('startAudioBtn').style.borderColor = varAccent();
         }
 
-        function varAccent() { return getComputedStyle(document.documentElement).getPropertyValue('--accent-color').trim(); }
-
-        // --- Real-time Glitch Video Synthesizer ---
+        // --- Live Bytebeat Controlled Pixel Glitch Canvas Loop ---
         function drawGlitchFrame() {
             requestAnimationFrame(drawGlitchFrame);
             
@@ -313,23 +331,20 @@
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
             }
 
-            // Heavy Glitch Manipulation Loop using currentByteValue
             try {
                 let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                 let data = imgData.data;
                 
-                // Use the live byte values to alter slicing metrics
                 let strength = currentByteValue & 63; 
                 let offset = (currentByteValue * 4) % (canvas.width * 4);
 
-                if (strength > 5) {
+                if (strength > 3) {
                     for (let i = 0; i < data.length; i += 4) {
-                        // Scanline line-shift glitching
-                        if (Math.floor(i / (canvas.width * 4)) % (10 + (currentByteValue % 20)) < 4) {
+                        if (Math.floor(i / (canvas.width * 4)) % (12 + (currentByteValue % 15)) < 5) {
                             let targetIdx = (i + offset) % data.length;
-                            data[i] = data[targetIdx];         // Red channel mutation
-                            data[i+1] = data[(targetIdx + 1) % data.length] ^ currentByteValue; // Green XOR mutation
-                            data[i+2] = 255 - data[i+2];       // High-contrast color inversion
+                            data[i] = data[targetIdx]; 
+                            data[i+1] = data[(targetIdx + 1) % data.length] ^ currentByteValue; 
+                            data[i+2] = 255 - data[i+2]; 
                         }
                     }
                 }
@@ -337,7 +352,7 @@
             } catch(e) {}
         }
 
-        // --- Interaction Handlers ---
+        // --- Interactivity Bindings ---
         document.getElementById('startAudioBtn').addEventListener('click', () => {
             initAudio();
             if (audioCtx.state === 'suspended') audioCtx.resume();
@@ -349,7 +364,7 @@
                     videoStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
                     webcam.srcObject = videoStream;
                 } catch (err) {
-                    alert("Webcam access denied or unavailable.");
+                    alert("Camera capture authorization rejected.");
                 }
             } else {
                 videoStream.getTracks().forEach(track => track.stop());
@@ -372,27 +387,21 @@
             broadcastData('formula', formulaInput.value);
         });
 
-        // --- Audio & Video Session Recording ---
+        // --- Multimedia Recording Matrix Pipeline ---
         document.getElementById('recordBtn').addEventListener('click', () => {
             if (!audioCtx || !scriptNode) {
-                alert("Please initialize the audio engine before attempting a recording capture.");
+                alert("Initialize the sound matrix platform before activating recording layers.");
                 return;
             }
-
             const recordBtn = document.getElementById('recordBtn');
 
             if (!isRecording) {
                 recordedChunks = [];
-                
-                // 1. Capture the visual track directly from the live glitched Canvas element
-                const canvasStream = canvas.captureStream(30); // 30 FPS target
-                
-                // 2. Capture the audio node destination track
+                const canvasStream = canvas.captureStream(30); 
                 const audioDest = audioCtx.createMediaStreamDestination();
                 scriptNode.connect(audioDest);
                 scriptNode.connect(audioCtx.destination); 
 
-                // 3. Combine both canvas video and node audio tracks into a unified composition stream
                 const combinedStream = new MediaStream();
                 combinedStream.addTrack(canvasStream.getVideoTracks()[0]);
                 combinedStream.addTrack(audioDest.stream.getAudioTracks()[0]);
@@ -421,7 +430,6 @@
         });
 
         drawGlitchFrame();
-        broadcastData('formula', currentFormulaStr);
     </script>
 </body>
 </html>
